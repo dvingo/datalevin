@@ -612,7 +612,8 @@
                                         ;x
                                         :REPLACED
 
-                                        )] [:effect]}]
+                                        )]
+            [:effect]}]
           1
           )
         ]
@@ -626,7 +627,7 @@
   (let [dir      (u/tmp-dir (str "pull-xform-bug" (UUID/randomUUID)))
         test-db  (d/db-with (d/empty-db dir
                               {:statement/effect
-                               {:db/valueType :db.type/ref, :db/cardinality :db.cardinality/one}})
+                               {:db/valueType :db.type/ref, :db/cardinality :db.cardinality/many}})
                    [{:statement/effect {:effect :allow}}])
         tracker_ (atom 0)]
     (d/pull test-db
@@ -634,8 +635,11 @@
                                     (prn "INXFORM " x)
                                     (swap! tracker_ inc)
 
-                                    :REPLACED
-                                    )] [:effect]}]
+                                    ;:REPLACED
+                                    x
+                                    )
+         :as :new-guy]
+        [[:effect :xform (fn [v] (println "in leaf xform" v) v) :as :other]]}]
       1
       )
     ))
