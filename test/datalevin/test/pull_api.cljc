@@ -428,9 +428,33 @@
                   (d/db-with [{:db/id 1 :name "1" :friend 2 :enemy 2}
                               {:db/id 2 :name "2"}]))]
       (is (= {:name "1" :friend {:name "2"} :enemy {:name "2"}}
-             (d/pull db '[:name {:friend [:name], :enemy [:name]}] 1)))
+             (d/pull db '[:name
+                          {:friend [:name],
+                           :enemy [:name]}
+                          ] 1)))
       (d/close-db db)
       (u/delete-files dir))))
+
+(comment
+  (let [dir (u/tmp-dir (str "pull-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir {:friend {:db/valueType :db.type/ref}
+                                 :enemy  {:db/valueType :db.type/ref}})
+              (d/db-with [{:db/id 1 :name "one" :friend 2 :enemy 2}
+                          {:db/id 2 :name "two"}]))
+        r (d/pull db [:name {[:friend :xform (fn [x]
+                                                (println "IN XF" x)
+                                               (assoc x :name "OTHER")
+                                               "TOHER"
+                                                ;x
+                                               )]
+                             [:name], :enemy [:name]}] 1)]
+
+    (d/close-db db)
+    (u/delete-files dir)
+    r
+    )
+
+  (test-dual-recursion-1))
 
 (deftest test-dual-recursion-2
   (let [dir (u/tmp-dir (str "pull-" (UUID/randomUUID)))
@@ -564,12 +588,56 @@
                        [:aka :xform vector]
                        {[:child :xform vector] ...}]
                      2))))
+
     (testing "default takes precedence"
       (is (= {:unknown "[unknown]"}
              (d/pull test-db
                      '[[:unknown :default "[unknown]" :xform vector]] 1))))
     (d/close-db test-db)
     (u/delete-files dir)))
+
+(deftest test-xform-to-one-bug
+  (let [dir      (u/tmp-dir (str "pull-xform-bug" (UUID/randomUUID)))
+        test-db  (d/db-with (d/empty-db dir
+                              {:statement/effect
+                               {:db/valueType :db.type/ref, :db/cardinality :db.cardinality/one}})
+                   [{:statement/effect {:effect :allow}}])
+        tracker_ (atom 0)
+        out (d/pull test-db
+          [{[:statement/effect :xform (fn XFORMER [x]
+                                        (prn "xform: " x)
+                                        (swap! tracker_ inc)
+                                        ;; todo also transform this
+                                        ;; then don't need the tracker
+                                        ;x
+                                        :REPLACED
+
+                                        )] [:effect]}]
+          1
+          )
+        ]
+    (println out)
+    (is (= out {:statement/effect :REPLACED}))
+    (is (= 1 @tracker_))
+    )
+  )
+(comment
+  (let [dir      (u/tmp-dir (str "pull-xform-bug" (UUID/randomUUID)))
+        test-db  (d/db-with (d/empty-db dir
+                              {:statement/effect
+                               {:db/valueType :db.type/ref, :db/cardinality :db.cardinality/one}})
+                   [{:statement/effect {:effect :allow}}])
+        tracker_ (atom 0)]
+    (d/pull test-db
+      [{[:statement/effect :xform (fn XFORMER [x]
+                                    (prn "INXFORM " x)
+                                    (swap! tracker_ inc)
+
+                                    :REPLACED
+                                    )] [:effect]}]
+      1
+      )
+    ))
 
 (deftest test-visitor
   (let [dir     (u/tmp-dir (str "pull-" (UUID/randomUUID)))

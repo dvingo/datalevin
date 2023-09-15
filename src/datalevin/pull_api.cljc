@@ -101,6 +101,29 @@
       :else
       [this (ref-frame context seen recursion-limits pattern attr id)])))
 
+(defrecord SinglevalRefAttrFrame [seen recursion-limits acc pattern ^PullAttr attr datoms]
+  IFrame
+
+  (-merge [_ result]
+    (MultivalRefAttrFrame.
+      seen
+      recursion-limits
+      (conj-some! acc (.-value ^ResultFrame result))
+      pattern
+      attr
+      (next-seq datoms)))
+
+  (-run [this context]
+    (cond+
+      :let [^Datom datom (first-seq datoms)]
+
+      (or (nil? datom) (not= (.-a datom) (.-name attr)))
+      [(ResultFrame. ((.-xform attr) (first (not-empty (persistent! acc)))) (or (and datoms (first datoms)) ()))]
+
+      :let [id (if (.-reverse? attr) (.-e datom) (.-v datom))]
+      :else
+      [this (ref-frame context seen recursion-limits pattern attr id)])))
+
 (defrecord AttrsFrame [seen recursion-limits acc ^PullPattern pattern ^PullAttr attr attrs datoms id]
   IFrame
   (-merge [_ result]
@@ -173,7 +196,9 @@
 
         (.-ref? attr)
         [(AttrsFrame. seen recursion-limits acc pattern attr attrs datoms id)
-         (ref-frame context seen recursion-limits pattern attr (.-v datom))]
+         (MultivalRefAttrFrame. seen recursion-limits (transient {}) pattern attr datoms)
+         ;(SinglevalRefAttrFrame. seen recursion-limits (transient {}) pattern attr datoms)
+         ]
 
         :else
         (recur
@@ -193,13 +218,16 @@
       (first-seq attrs)
       (next-seq attrs)
       id))
+
   (-run [this context]
     (loop [acc   acc
            attr  attr
            attrs attrs]
+
       (cond+
         (nil? attr)
-        [(ResultFrame. (not-empty (persistent! acc)) nil)]
+        (let [r (not-empty (persistent! acc))]
+          [(ResultFrame. r nil)])
 
         :let [name   (.-name attr)
               datoms (db/-range-datoms
@@ -233,6 +261,7 @@
 (defn ref-frame [context seen recursion-limits pattern ^PullAttr attr id]
   (cond+
     (not (auto-expanding? attr))
+    ;(println " ref-frame ATTRS FRAME!" (.-name attr))
     (attrs-frame context seen recursion-limits (.-pattern attr) id)
 
     (seen id)
@@ -324,6 +353,7 @@
    {:pre [(db/db? db)]}
    (binding [timeout/*deadline* (timeout/to-deadline timeout)]
      (let [parsed-opts (parse-opts db pattern opts)]
+       (def parsed-opts' parsed-opts)
        (pull-impl parsed-opts id)))))
 
 (defn pull-many
