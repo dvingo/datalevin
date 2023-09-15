@@ -621,6 +621,7 @@
     (is (= 1 @tracker_))
     )
   )
+;; also try with no cardinality, just ref
 (comment
   (let [dir      (u/tmp-dir (str "pull-xform-bug" (UUID/randomUUID)))
         test-db  (d/db-with (d/empty-db dir
